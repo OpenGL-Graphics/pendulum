@@ -70,6 +70,7 @@ int main() {
   // grid & gizmo for debugging
   Renderer gizmo(program_basic, Gizmo(), Attributes::get({"position"}));
   Renderer grid(program_basic, GridLines(50), Attributes::get({"position"}));
+  Renderer cubes(program_basic, Cube(), Attributes::get({"position"}, 8));
 
   // spheres
   Renderer spheres(program_phong, Sphere(1.0, 32, 32), Attributes::get({"position", "normal"}));
@@ -86,13 +87,26 @@ int main() {
   window.init_timer();
 
   ////////////////////////////////////////////////
-  // Game loop
+  // Objects
   ////////////////////////////////////////////////
 
-  ///
+  // light cubes (scaling then translation)
   Light light(glm::vec3(5.5f, 3.0f, 4.0f), glm::vec3(1));
+  glm::mat4 translate_light = glm::translate(glm::mat4(1), light.position);
+  glm::mat4 scale_light = glm::scale(glm::mat4(1), glm::vec3(0.2f));
+  glm::mat4 model_light = translate_light * scale_light;
+
+  // spheres
   const unsigned int N_SPHERES = 3;
-  ///
+  glm::vec3 positions_sphere[N_SPHERES] = {
+    glm::vec3( 7.0f, 1.5f, 6.0f),
+    glm::vec3(16.0f, 1.5f, 6.0f),
+    glm::vec3(26.5f, 1.5f, 6.0f),
+  };
+
+  ////////////////////////////////////////////////
+  // Game loop
+  ////////////////////////////////////////////////
 
   while (!window.is_closed()) {
     // clear color & depth buffers before rendering every frame
@@ -109,15 +123,16 @@ int main() {
     grid.set_transform({ { glm::mat4(1.0) }, view, projection3d });
     grid.draw_lines({ {"colors[0]", glm::vec3(1.0f, 1.0f, 1.0f)} });
 
+    // light cubes
+    Transformation transform_cube({ model_light }, view, projection3d);
+    cubes.set_transform(transform_cube);
+    cubes.draw({
+        {"colors", light.color}
+    });
+
     // TODO: rotate in vertex shader & move inverseTranspose outside game loop
     // shaded sphere rotating around light
     // https://stackoverflow.com/a/53765106/2228912
-    glm::vec3 positions_sphere[N_SPHERES] = {
-      glm::vec3( 7.0f, 1.5f, 6.0f),
-      glm::vec3(16.0f, 1.5f, 6.0f),
-      glm::vec3(26.5f, 1.5f, 6.0f),
-    };
-
     std::vector<glm::mat4> models_spheres(N_SPHERES), normals_mats_spheres(N_SPHERES);
     std::vector<glm::vec3> lights_positions(N_SPHERES), lights_ambiant(N_SPHERES), lights_diffuse(N_SPHERES), lights_specular(N_SPHERES);
 
@@ -135,7 +150,7 @@ int main() {
           ),
           positions_sphere[i_sphere] // initial position (also makes radius smaller)
         ),
-        glm::vec3(0.5f)
+        glm::vec3(1)
       ));
       models_spheres[i_sphere] = model_sphere;
 
@@ -182,9 +197,10 @@ int main() {
   program_phong.free();
 
   // destroy renderers of each shape (frees vao & vbo)
-  spheres.free();
   gizmo.free();
   grid.free();
+  cubes.free();
+  spheres.free();
 
   // destroy window & terminate glfw
   window.destroy();
