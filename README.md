@@ -1,8 +1,10 @@
 # Screenshot
-*To be added later*
+![Screenshot](/screenshots/screenshot-2023-04-11.png)
 
 # Description
-Pendulum made out of moving spheres rendered with OpenGL.
+Simple pendulum made out of a moving sphere rendered with OpenGL, and based on [this video][1] from The Coding Train.
+
+[1]: https://www.youtube.com/watch?v=NBWMtlbbOag
 
 # How to run
 ```console

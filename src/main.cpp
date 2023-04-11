@@ -41,8 +41,7 @@ int main() {
   }
 
   // camera
-  float cam_y = 10;
-  glm::vec3 position_cam(25, cam_y, 50);
+  glm::vec3 position_cam(0, 10, 20);
   glm::vec3 direction_cam(0, -0.5, -1);
   glm::vec3 up_cam(0, 1, 0);
   Camera camera(position_cam, direction_cam, up_cam);
@@ -91,18 +90,39 @@ int main() {
   ////////////////////////////////////////////////
 
   // light cubes (scaling then translation)
-  Light light(glm::vec3(5.5f, 3.0f, 4.0f), glm::vec3(1));
+  glm::vec3 position_light(0, 5, 0);
+  Light light(position_light, glm::vec3(1));
   glm::mat4 translate_light = glm::translate(glm::mat4(1), light.position);
   glm::mat4 scale_light = glm::scale(glm::mat4(1), glm::vec3(0.2f));
   glm::mat4 model_light = translate_light * scale_light;
 
   // spheres
-  const unsigned int N_SPHERES = 3;
-  glm::vec3 positions_sphere[N_SPHERES] = {
-    glm::vec3( 7.0f, 1.5f, 6.0f),
-    glm::vec3(16.0f, 1.5f, 6.0f),
-    glm::vec3(26.5f, 1.5f, 6.0f),
-  };
+  glm::vec3 light_position = light.position;
+  glm::vec3 light_ambiant = light.ambiant;
+  glm::vec3 light_diffuse = light.diffuse;
+  glm::vec3 light_specular = light.specular;
+
+  ////////////////////////////////////////////////
+  // Pendulum physics
+  ////////////////////////////////////////////////
+
+  /**
+   * References:
+   * Coding Train video: https://www.youtube.com/watch?v=NBWMtlbbOag
+   * Equations: https://en.wikipedia.org/wiki/Pendulum_(mechanics)
+   * Equations: http://calculuslab.deltacollege.edu/ODE/7-A-2/7-A-2-h.html
+   */
+
+  // Newton's second law: F = m * acc = acc (supposedly, mass = 1)
+  float gravity = 0.015;
+  glm::vec3 pivot = position_light;
+  float length = glm::length(pivot);
+
+  // angle rel. to position at rest (vertical axis)
+  float angle = M_PI / 3;
+  float velocity_ang = 0,
+        acceleration_ang = 0;
+
 
   ////////////////////////////////////////////////
   // Game loop
@@ -130,48 +150,41 @@ int main() {
         {"colors", light.color}
     });
 
-    // TODO: rotate in vertex shader & move inverseTranspose outside game loop
-    // shaded sphere rotating around light
-    // https://stackoverflow.com/a/53765106/2228912
-    std::vector<glm::mat4> models_spheres(N_SPHERES), normals_mats_spheres(N_SPHERES);
-    std::vector<glm::vec3> lights_positions(N_SPHERES), lights_ambiant(N_SPHERES), lights_diffuse(N_SPHERES), lights_specular(N_SPHERES);
+    /**
+     * Movement of pendulum bob (i.e. sphere)
+     */
 
-    for (size_t i_sphere = 0; i_sphere < N_SPHERES; ++i_sphere) {
-      glm::vec3 pivot = light.position;
-      glm::mat4 model_sphere(glm::scale(
-        glm::translate(
-          glm::translate(
-            glm::rotate(
-              glm::translate(glm::mat4(1.0f), pivot), // moving pivot to its original pos.
-              static_cast<float>(glfwGetTime()),
-              glm::vec3(0.0f, 1.0f, 0.0f)
-            ),
-            -pivot // bringing pivot to origin first
-          ),
-          positions_sphere[i_sphere] // initial position (also makes radius smaller)
-        ),
-        glm::vec3(1)
-      ));
-      models_spheres[i_sphere] = model_sphere;
+    // linear or tangential acceleration
+    // tangential component of gravitational force in opposite dir to angle (=> negative)
+    // i.e. F_tan = -F * sin(theta) => acc_lin = -g * sin(theta) (mass=1 supposedly)
+    float acceleration_lin = -gravity * sin(angle);
 
-      // normal vec to world space (when non-uniform scaling): https://learnopengl.com/Lighting/Basic-Lighting
-      glm::mat4 normal_mat = glm::inverseTranspose(model_sphere);
-      normals_mats_spheres[i_sphere] = normal_mat;
+    // angular acceleration
+    // from 2nd derivative of: arc = length * theta => acc_ang = d^2(theta)/d^t2 = acc_lin / length
+    float acceleration_ang = acceleration_lin / length;
 
-      lights_positions[i_sphere] = light.position;
-      lights_ambiant[i_sphere] = light.ambiant;
-      lights_diffuse[i_sphere] = light.diffuse;
-      lights_specular[i_sphere] = light.specular;
+    // update angular velocity using angular acceleration
+    velocity_ang += acceleration_ang;
+    angle += velocity_ang;
 
-    } // SPHERES UNIFORMS ARRAYS
+    // update sphere bob xy coords
+    glm::vec3 position_sphere(
+        pivot.x + length * std::sin(angle),
+        pivot.y - length * std::cos(angle),
+        0
+    );
 
-    Transformation transform_sphere({ models_spheres, view, projection3d });
+    /**
+     * Render sphere
+     */
+
+    // normal vec to world space (when non-uniform scaling): https://learnopengl.com/Lighting/Basic-Lighting
+    glm::mat4 model_sphere = glm::translate(glm::mat4(1), position_sphere);
+    glm::mat4 normal_mat = glm::inverseTranspose(model_sphere);
+
+    // spheres
+    Transformation transform_sphere({ {model_sphere}, view, projection3d });
     spheres.set_transform(transform_sphere);
-    spheres.set_uniform_arr("normals_mats", normals_mats_spheres);
-    spheres.set_uniform_arr("lights.position", lights_positions);
-    spheres.set_uniform_arr("lights.ambiant", lights_ambiant);
-    spheres.set_uniform_arr("lights.diffuse", lights_diffuse);
-    spheres.set_uniform_arr("lights.specular", lights_specular);
 
     spheres.draw({
       {"material.ambiant", glm::vec3(1.0f, 0.5f, 0.31f)},
@@ -179,6 +192,12 @@ int main() {
       {"material.specular", glm::vec3(0.5f, 0.5f, 0.5f)},
       // {"material.shininess", 32.0f},
       {"material.shininess", 4.0f}, // bigger specular reflection
+
+      {"normals_mats[0]", normal_mat},
+      {"lights[0].position", light_position},
+      {"lights[0].ambiant", light_ambiant},
+      {"lights[0].diffuse", light_diffuse},
+      {"lights[0].specular", light_specular},
 
       {"position_camera", camera.position},
     });
